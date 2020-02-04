@@ -131,7 +131,7 @@ object PrometheusReporter {
         startEmbeddedServer = prometheusConfig.getBoolean("start-embedded-http-server"),
         embeddedServerHostname = prometheusConfig.getString("embedded-server.hostname"),
         embeddedServerPort = prometheusConfig.getInt("embedded-server.port"),
-        embeddedServerImpl = prometheusConfig.getString("embedded-server-impl"),
+        embeddedServerImpl = prometheusConfig.getString("embedded-server.impl"),
         defaultBuckets = prometheusConfig.getDoubleList("buckets.default-buckets").asScala.toSeq,
         timeBuckets = prometheusConfig.getDoubleList("buckets.time-buckets").asScala.toSeq,
         informationBuckets = prometheusConfig.getDoubleList("buckets.information-buckets").asScala.toSeq,

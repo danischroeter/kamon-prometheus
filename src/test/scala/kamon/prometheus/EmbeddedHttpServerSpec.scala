@@ -2,24 +2,31 @@ package kamon.prometheus
 
 import java.net.URL
 
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{Config, ConfigFactory}
 import kamon.Kamon
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
 
 class SunHttpServerSpecSuite extends EmbeddedHttpServerSpecSuite {
-  override def createTestee(): PrometheusReporter = PrometheusReporter.create()
+  override def testConfig: Config = ConfigFactory.load()
 }
 class NanoHttpServerSpecSuite extends EmbeddedHttpServerSpecSuite {
-  val config = ConfigFactory.parseString("kamon.prometheus.embedded-server-impl=nano").withFallback(ConfigFactory.load())
-  override def createTestee(): PrometheusReporter = new PrometheusReporter(initialConfig = config)
+  override def testConfig: Config = ConfigFactory.parseString(
+    """
+      kamon.prometheus.embedded-server{
+        impl=nano
+        port=9096
+      }
+      """).withFallback(ConfigFactory.load())
+  override def port = 9096
 }
 
 abstract class EmbeddedHttpServerSpecSuite extends WordSpec with Matchers with BeforeAndAfterAll with KamonTestSnapshotSupport {
-  protected def createTestee(): PrometheusReporter
+  protected def testConfig: Config
+  protected def port: Int = 9095
 
   private var testee: PrometheusReporter = _
 
-  override def beforeAll(): Unit = testee = createTestee()
+  override def beforeAll(): Unit = testee = new PrometheusReporter(initialConfig = testConfig)
 
   override def afterAll(): Unit = testee.stop()
 
@@ -51,7 +58,7 @@ abstract class EmbeddedHttpServerSpecSuite extends WordSpec with Matchers with B
 
     "provide the metrics on GET to /metrics with data after reconfigure" in {
       //arrange
-      testee.reconfigure(Kamon.config)
+      testee.reconfigure(testConfig)
       testee.reportPeriodSnapshot(counter("jvm.mem"))
       //act
       val metrics = httpGetMetrics()
@@ -62,7 +69,7 @@ abstract class EmbeddedHttpServerSpecSuite extends WordSpec with Matchers with B
 
 
   private def httpGetMetrics(): String = {
-    val src = scala.io.Source.fromURL(new URL("http://127.0.0.1:9095/metrics"))
+    val src = scala.io.Source.fromURL(new URL(s"http://127.0.0.1:$port/metrics"))
     try
       src.mkString
     finally

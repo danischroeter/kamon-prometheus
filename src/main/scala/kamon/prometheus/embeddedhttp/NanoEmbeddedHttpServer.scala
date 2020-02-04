@@ -17,4 +17,5 @@ class NanoEmbeddedHttpServer(hostname: String, port: Int, scrapeSource: ScrapeSo
   }
 
   override def stop(): Unit = server.stop()
+
 }
