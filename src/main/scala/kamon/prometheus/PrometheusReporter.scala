@@ -19,8 +19,6 @@ package prometheus
 import java.time.Duration
 
 import com.typesafe.config.{Config, ConfigUtil}
-import fi.iki.elonen.NanoHTTPD
-import fi.iki.elonen.NanoHTTPD.{Response, newFixedLengthResponse}
 import kamon.metric._
 import kamon.module.{MetricReporter, Module, ModuleFactory}
 import kamon.prometheus.PrometheusReporter._
@@ -29,7 +27,7 @@ import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
 
-class PrometheusReporter(configPath: String = DefaultConfigPath, initialConfig: Config = Kamon.config()) extends MetricReporter {
+class PrometheusReporter(configPath: String = DefaultConfigPath, initialConfig: Config = Kamon.config()) extends MetricReporter with ScrapeSource {
   import PrometheusReporter.Settings.{environmentTags, readSettings}
 
   private val _logger = LoggerFactory.getLogger(classOf[PrometheusReporter])
@@ -38,7 +36,7 @@ class PrometheusReporter(configPath: String = DefaultConfigPath, initialConfig: 
 
   @volatile private var _preparedScrapeData: String =
     "# The kamon-prometheus module didn't receive any data just yet.\n"
-
+  @volatile private var _config = initialConfig
   @volatile private var _reporterSettings = readSettings(initialConfig.getConfig(configPath))
 
   {
@@ -50,6 +48,7 @@ class PrometheusReporter(configPath: String = DefaultConfigPath, initialConfig: 
 
   override def reconfigure(newConfig: Config): Unit = {
     _reporterSettings = readSettings(newConfig.getConfig(configPath))
+    _config = newConfig
     stopEmbeddedServerIfStarted()
     startEmbeddedServerIfEnabled()
   }
@@ -67,19 +66,13 @@ class PrometheusReporter(configPath: String = DefaultConfigPath, initialConfig: 
     _preparedScrapeData = scrapeDataBuilder.build()
   }
 
-  def scrapeData(): String = _preparedScrapeData
-
-  class EmbeddedHttpServer(hostname: String, port: Int) extends NanoHTTPD(hostname, port) {
-    override def serve(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response = {
-      newFixedLengthResponse(Response.Status.OK, "text/plain; version=0.0.4; charset=utf-8", scrapeData())
-    }
-  }
+  override def scrapeData(): String = _preparedScrapeData
 
   private def startEmbeddedServerIfEnabled(): Unit = {
     if (_reporterSettings.startEmbeddedServer) {
-      val server = new EmbeddedHttpServer(_reporterSettings.embeddedServerHostname, _reporterSettings.embeddedServerPort)
-      server.start()
-
+      val server = _reporterSettings.createEmbeddedHttpServerClass()
+          .getConstructor(Array[Class[_]](classOf[String], classOf[Int], classOf[ScrapeSource], classOf[Config]): _*)
+          .newInstance(_reporterSettings.embeddedServerHostname, _reporterSettings.embeddedServerPort, this, _config)
       _logger.info(s"Started the embedded HTTP server on http://${_reporterSettings.embeddedServerHostname}:${_reporterSettings.embeddedServerPort}")
       _embeddedHttpServer = Some(server)
     }
@@ -87,6 +80,14 @@ class PrometheusReporter(configPath: String = DefaultConfigPath, initialConfig: 
 
   private def stopEmbeddedServerIfStarted(): Unit =
     _embeddedHttpServer.foreach(_.stop())
+}
+
+trait ScrapeSource {
+  def scrapeData(): String
+}
+
+abstract class EmbeddedHttpServer(hostname: String, port: Int, scrapeSource: ScrapeSource, config: Config) {
+  def stop(): Unit
 }
 
 object PrometheusReporter {
@@ -106,12 +107,22 @@ object PrometheusReporter {
                          startEmbeddedServer: Boolean,
                          embeddedServerHostname: String,
                          embeddedServerPort: Int,
+                         embeddedServerImpl: String,
                          defaultBuckets: Seq[java.lang.Double],
                          timeBuckets: Seq[java.lang.Double],
                          informationBuckets: Seq[java.lang.Double],
                          customBuckets: Map[String, Seq[java.lang.Double]],
                          includeEnvironmentTags: Boolean
-                     )
+                     ) {
+    def createEmbeddedHttpServerClass(): Class[_ <: EmbeddedHttpServer] = {
+      val clz = embeddedServerImpl match {
+        case "sun" => "kamon.prometheus.embeddedhttp.SunEmbeddedHttpServer"
+        case "nano" => "kamon.prometheus.embeddedhttp.NanoEmbeddedHttpServer"
+        case fqcn => fqcn
+      }
+      Class.forName(clz).asInstanceOf[Class[_ <: EmbeddedHttpServer]]
+    }
+  }
 
   object Settings {
 
@@ -120,6 +131,7 @@ object PrometheusReporter {
         startEmbeddedServer = prometheusConfig.getBoolean("start-embedded-http-server"),
         embeddedServerHostname = prometheusConfig.getString("embedded-server.hostname"),
         embeddedServerPort = prometheusConfig.getInt("embedded-server.port"),
+        embeddedServerImpl = prometheusConfig.getString("embedded-server-impl"),
         defaultBuckets = prometheusConfig.getDoubleList("buckets.default-buckets").asScala.toSeq,
         timeBuckets = prometheusConfig.getDoubleList("buckets.time-buckets").asScala.toSeq,
         informationBuckets = prometheusConfig.getDoubleList("buckets.information-buckets").asScala.toSeq,

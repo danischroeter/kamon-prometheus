@@ -2,18 +2,28 @@ package kamon.prometheus
 
 import java.net.URL
 
+import com.typesafe.config.ConfigFactory
 import kamon.Kamon
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
 
-class EmbeddedHttpServerSpec extends WordSpec with Matchers with BeforeAndAfterAll with KamonTestSnapshotSupport {
+class SunHttpServerSpecSuite extends EmbeddedHttpServerSpecSuite {
+  override def createTestee(): PrometheusReporter = PrometheusReporter.create()
+}
+class NanoHttpServerSpecSuite extends EmbeddedHttpServerSpecSuite {
+  val config = ConfigFactory.parseString("kamon.prometheus.embedded-server-impl=nano").withFallback(ConfigFactory.load())
+  override def createTestee(): PrometheusReporter = new PrometheusReporter(initialConfig = config)
+}
 
-  private val testee = PrometheusReporter.create()
+abstract class EmbeddedHttpServerSpecSuite extends WordSpec with Matchers with BeforeAndAfterAll with KamonTestSnapshotSupport {
+  protected def createTestee(): PrometheusReporter
 
-  override def afterAll(): Unit = {
-    testee.stop()
-  }
+  private var testee: PrometheusReporter = _
 
-  "the embedded http server" should {
+  override def beforeAll(): Unit = testee = createTestee()
+
+  override def afterAll(): Unit = testee.stop()
+
+  "the embedded sun http server" should {
     "provide no data comment on GET to /metrics when no data loaded yet" in {
       //act
       val metrics = httpGetMetrics()
@@ -58,5 +68,4 @@ class EmbeddedHttpServerSpec extends WordSpec with Matchers with BeforeAndAfterA
     finally
       src.close()
   }
-
 }
