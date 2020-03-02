@@ -9,16 +9,6 @@ import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
 class SunHttpServerSpecSuite extends EmbeddedHttpServerSpecSuite {
   override def testConfig: Config = ConfigFactory.load()
 }
-class NanoHttpServerSpecSuite extends EmbeddedHttpServerSpecSuite {
-  override def testConfig: Config = ConfigFactory.parseString(
-    """
-      kamon.prometheus.embedded-server{
-        impl=nano
-        port=9096
-      }
-      """).withFallback(ConfigFactory.load())
-  override def port = 9096
-}
 
 abstract class EmbeddedHttpServerSpecSuite extends WordSpec with Matchers with BeforeAndAfterAll with KamonTestSnapshotSupport {
   protected def testConfig: Config

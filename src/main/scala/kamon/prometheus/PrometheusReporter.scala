@@ -117,7 +117,6 @@ object PrometheusReporter {
     def createEmbeddedHttpServerClass(): Class[_ <: EmbeddedHttpServer] = {
       val clz = embeddedServerImpl match {
         case "sun" => "kamon.prometheus.embeddedhttp.SunEmbeddedHttpServer"
-        case "nano" => "kamon.prometheus.embeddedhttp.NanoEmbeddedHttpServer"
         case fqcn => fqcn
       }
       Class.forName(clz).asInstanceOf[Class[_ <: EmbeddedHttpServer]]
